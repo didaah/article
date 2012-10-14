@@ -1,0 +1,755 @@
+<?php
+// $Id$
+
+/**
+ * @Implement of hook_menu()
+ */
+function article_menu() {
+  $items = array();
+  
+  $items['admin/article/list'] = array(
+    'title' => '内容管理',
+    'access_arguments' => array('article admin view'),
+    'page_callback' => 'article_admin_lists',
+    'file' => 'article.admin.inc',
+  );
+  
+  $items['admin/article/add'] = array(
+    'title' => '添加内容',
+    'access_arguments' => array('article admin create'),
+    'page_callback' => 'article_admin_form',
+    'file' => 'article.admin.inc',
+  );
+  
+  $items['admin/article/edit/%'] = array(
+    'description' => '编辑内容',
+    'load_functions' => array(3 => array('article_load')),
+    'access_arguments' => array('article admin update'),
+    'page_callback' => 'article_admin_form',
+    'page_arguments' => array(3),
+    'file' => 'article.admin.inc',
+  );
+  
+  $items['article/%'] = array(
+    'description' => '内容浏览',
+    'load_functions' => array(1 => array('article_load')),
+    'access_arguments' => array('article article view'),
+    'page_callback' => 'article_page_view',
+    'page_arguments' => array(1),
+    'file' => 'article.page.inc',
+  );
+   
+  $items['article/category/%'] = array(
+    'description' => '分类浏览',
+    'load_functions' => array(2 => array('article_category_load')),
+    'access_arguments' => array('article article view'),
+    'page_callback' => 'article_page_category',
+    'page_arguments' => array(2),
+    'file' => 'article.page.inc',
+  );
+   
+  $items['admin/article/category']  = array(
+    'access_arguments' => array('article admin category'),
+    'title' => '产品类别',
+    'page_callback' => 'article_field_category',
+    'file' => 'article.field.inc'
+  );
+ 
+  return $items; 
+}
+
+/**
+ * @Implement of hook_perm()
+ * 注册权限
+ */
+function article_perm() {
+  return array(
+    'article article view' => '内容浏览',
+    'article admin view' => '内容管理',
+    'article admin category' => '内容类别管理',
+    'article admin fields' => '类别属性管理',
+    'article admin create' => '添加内容',
+    'article admin update' => '编辑内容',
+    'article admin delete' => '删除内容',
+  );
+}
+
+/**
+ * @Implement of hook_system_admin_menus()
+ * 注册管理菜单
+ */
+function article_system_admin_menus() {
+  $menu = array(array(), '内容');
+
+  if ($cat = article_get_cat_cid()) {
+    foreach ($cat as $o) {
+      $menu[0][] = array($o->name . '管理', 'admin/article/list/' . $o->cid);
+    }
+  }
+
+  $menu[0][] = array('内容分类管理', 'admin/article/category');
+
+  return $menu;
+}
+
+/**
+ * @Implement of hook_field_term_view()
+ */
+function article_field_term_view($term) {
+  dd_set_title(array($term->field->name, $term->name));
+  dd_set_breadcrumb(array(l($term->field->name, 'fields/' . $term->field->field_id), $term->name));
+  return article_list_summary(NULL, $term->tid);
+}
+
+/**
+ * @Implement of hook_field_view()
+ */
+function article_field_view($field) {
+  dd_set_title(array($field->name));
+  dd_set_breadcrumb(array($field->name));
+  return article_list_summary($field->field_id);
+}
+
+/**
+ * 获取摘要列表
+ * @param (int) $fid
+ * 	fields->fid
+ * @param (int) $tid
+ * 	trem->tid
+ * @return ()
+ */
+function article_list_summary($fid = 0, $tid = 0, $cid = 0) {
+  
+  dd_add_css(dd_get_path('module', 'article') . '/article.css');
+
+  $args = array();
+  
+  if ($tid) {
+    $query = 'SELECT n.cid, n.nid, n.visit, n.title, n.created, n.summary FROM {article} n 
+    INNER JOIN {fields_term_node} ftn ON n.nid = ftn.nid WHERE n.status > 0 AND ftn.tid = ?';
+    $args[] = $tid;
+
+    if (!empty($cid)) {
+      $query .= ' AND n.cid = ?';
+      $args[] = $cid;
+    }
+
+  } else  if ($cid) {
+    $query = 'SELECT n.cid, n.nid, n.visit, n.title, n.created, n.summary FROM {article} n 
+     WHERE n.status > 0 AND n.cid = ?';
+     $args[] = $cid;
+  } else if ($terms = field_get_cache_term_id($fid)) {
+    
+    $query = 'SELECT DISTINCT(ftn.nid), n.cid, n.nid, n.visit, n.title, n.created, n.summary FROM {article} n 
+    INNER JOIN {fields_term_node} ftn ON n.nid = ftn.nid';
+    $tids = array();
+    foreach ($terms as $term) {
+      $tids[] = $term->tid;
+    }
+    
+    $query .= ' WHERE n.status > 0 AND ftn.tid IN (' . implode(',', $tids) . ')';
+  }
+  
+  $query .= ' ORDER BY n.created DESC';
+  $nids = array();
+  
+  $cat = new stdClass;
+
+  if ($cid) {
+    $cat->info = article_category_load($cid);
+  }
+
+  if ($fetch = pager_query($query, 10, 0, NULL, $args)) {
+    $type = article_get_cat_cid();
+    foreach ($fetch as $o) {
+      $o->path = url('article/' . $o->nid);
+      $o->cat = $type[$o->cid];
+      $cat->list[$o->nid] = $o;
+      $nids[] = $o->nid;
+    }
+    
+    if ($fetch = db_query('SELECT fid, ext_id2, filepath, filename FROM {files} WHERE 
+    ext_type = ? AND ext_id2 IN (' . implode(',', $nids) . ') AND filemime IN (?, ?, ?, ?)',
+    array('field_file', 'image/jpeg', 'image/png', 'image/gif', 'image/jpg'))) {
+      foreach ($fetch as $o) {
+        $cat->list[$o->ext_id2]->files[] = $o;
+      }
+    }
+    
+    $cat->pager = pager_view();
+    
+  }
+  
+  return theme('article_cat', $cat);
+}
+
+/**
+ * 根据 cid 加载一个分类对象
+ */
+function article_category_load($cid) {
+  return article_get_cat_cid($cid);
+}
+
+/**
+ * 根据 nid 加载一个内容对象
+ * @param (int) $nid
+ * @return (object) $article
+ */
+function article_load($nid) {
+  static $article;
+  
+  if (!isset($article[$nid])) {
+    if ($article[$nid] = db_query('SELECT n.*, u.name FROM {article} n INNER JOIN {users} u 
+    ON n.uid = u.uid WHERE n.nid = ?', array($nid), array('return' => 'one'))) {
+      $article[$nid]->path = url('article/' . $article[$nid]->nid);
+      
+      if (!empty($article[$nid]->data)) {
+        $article[$nid]->data = unserialize($article[$nid]->data);
+      } else {
+        $article[$nid]->data = array();
+      }
+
+      // 内容分类信息
+      $article[$nid]->cat = article_get_cat_cid($article[$nid]->cid);
+
+      // 通用扩展属性
+      field_get_node_load('article', 'default', $article[$nid]);
+
+      // 分类扩展属性
+      if (!empty($article[$nid]->cat)) {
+        field_get_node_load('article', 'ext_article_' . $article[$nid]->cat->type, $article[$nid]);
+      }
+
+    }
+  }
+  
+  return $article[$nid];
+}
+
+/**
+ * 删除一条内容
+ * @param int $nid
+ * 	内容 id
+ * @return (bool)
+ */
+function article_delete($nid) {
+  if ($article = article_load($nid)) {
+    if (db_exec('DELETE FROM {article} WHERE nid = ?', array($nid))) {
+      // 删除内容下关联的文件
+      db_exec('DELETE FROM {files} WHERE ext_type = ? AND ext_id = ?', 
+      array('article', $article->nid));
+      
+      // 删除内容扩展字段
+      field_get_node_load('article', 'default', $article);
+
+      // 分类扩展属性
+      if (!empty($article->cat)) {
+        field_get_node_load('article', 'ext_article_' . $article->cat->type, $article);
+      }
+
+      // 触发钩子
+      module_alter_all('article_delete', $article);
+      
+      return true;
+    }
+  }
+}
+
+/**
+ * 内容表单
+ * @param (object) $article
+ */
+function article_form($article) {
+  if (!is_object($article) || empty($article->cid)) {
+    dd_set_message('请传递 $article 对象，若新增内容，请给 $article->cid 赋值');
+    return false;
+  }
+
+  if (!$cat = article_get_cat_cid($article->cid)) {
+    dd_set_message('不正确的内容类别，请重新进入', 'error');
+    return false;
+  }
+
+  $article->cat = $cat;
+
+  $form['fields']['cat_name'] = array(
+    '#title' => '类别',
+    '#weight' => -1000,
+    '#value' => $cat->name 
+  );
+
+  $form['fields']['cid'] = array(
+    '#type' => 'hidden',
+    '#default_value' => $article->cid,
+    '#constant' => 1
+  );
+
+  $form['fields']['type'] = array(
+    '#type' => 'hidden',
+    '#default_value' => $cat->type,
+    '#constant' => 1
+  );
+
+  $form['fields']['title'] = array(
+    '#title' => '标题',
+    '#type' => 'textfield',
+    '#weight' => -100,
+    '#default_value' => $article->title,
+    '#required' => 1,
+  );
+  
+  $form['fields']['nid'] = array(
+    '#type' => 'hidden',
+    '#default_value' => $article->nid,
+    '#constant' => 1,
+  );
+  
+  $form['fields']['summary'] = array(
+    '#type' => 'textarea',
+    '#default_value' => $article->summary,
+    '#fieldset_prefix' => 'desc',
+    '#fieldset_legend' => '内容摘要',
+    '#fieldset_suffix' => 1,
+    '#fieldset' => true,
+    '#description' => '不超过 500 字，留空将自动生成',
+    '#attributes' => array('rows' => 4, 'cols' => 60)
+  );
+  
+  $form['fields']['body'] = array(
+    '#title' => '内容',
+    '#type' => 'textarea',
+    '#default_value' => $article->body,
+    '#required' => 1,
+    '#attributes' => array('rows' => 8, 'cols' => 60, 'id' => 'body')
+  );
+  
+  global $form_tokens;
+  
+  $file_url = url('files/editor', array('query' => 'op=ckeditor&name=upload&type=image&image_size=800x600'));
+  if (!empty($article->nid)) {
+    $file_url .= '&ext_type=article&ext_id=' . $article->nid;
+  } else {
+    // 内容提交保存时，以 $form_token 做为关联条件
+    $file_url .= '&status=-1&ext_type=' . $form_tokens['article_form'];
+  }
+  
+  dd_get_editor('body', array(
+    'toolbar' => 'full',
+    'filebrowserImageUploadUrl' => $file_url,
+    'height' => 300,
+  ));
+  
+  $form['fields']['username'] = array(
+    '#type' => 'textfield',
+    '#title' => '作者',
+    '#default_value' => !empty($article->username) ? $article->username : $GLOBALS['user']->name,
+    '#required' => 1,
+    '#description' => '用于页面显示'
+  );
+
+  $form['fields']['visit'] = array(
+    '#type' => 'textfield',
+    '#title' => '访问',
+    '#default_value' => isset($article->visit) ? $article->visit : 0,
+    '#required' => 1,
+    '#description' => '内容的访问量，只能是正整数'
+  );
+  
+  $form['fields']['status'] = array(
+    '#type' => 'radio',
+    '#title' => '状态',
+    '#default_value' => isset($article->status) ? $article->status : 1,
+    '#required' => 1,
+    '#options' => array('暂不发布', '立即发布')
+  );
+  
+  $form['fields']['get_images'] = array(
+    '#type' => 'radio',
+    '#title' => '下载',
+    '#default_value' => 1,
+    '#options' => array('否', '是'),
+    '#description' => '将其它网站的图片下载到本地'
+  );
+  
+  $form['fields']['filter_links'] = array(
+    '#type' => 'radio',
+    '#title' => '过滤',
+    '#default_value' => 1,
+    '#options' => array('否', '是'),
+    '#description' => '过滤掉其它网站的链接'
+  );
+
+  field_get_node_form('article', 'default', $article, $form);
+  field_get_node_form('article', 'ext_article_' . $cat->type, $article, $form);
+  module_alter_all('article_form', $form, $article);
+  
+  $form['fields']['button'] = array(
+    '#type' => 'submit',
+    '#weight' => 100,
+    '#submit' => 'article_form_submit'
+  );
+  
+  $form['settings'] = array(
+    '#validate' => array('article_form_validate'),
+    '#ajax_validate' => 1,
+    '#redirect' => !empty($article->redirect) ? $article->redirect : NULL
+  );
+  
+  return $form;
+}
+
+function article_form_validate(&$form, &$v) {
+  $v['_dida_values']->cat = article_get_cat_cid($v['_dida_values']->cid);
+  return article_validate($v['_dida_values'], $form);
+}
+
+function article_form_submit(&$form, &$v) {
+  if (article_save($v['_dida_values'], 0)) {
+    
+    if (empty($v['_dida_values']->_db_write_record_is_update)) {
+      // 将文件关联到内容
+      db_exec('UPDATE {files} SET ext_type = ?, ext_id = ?, status = 1 WHERE ext_type = ?', 
+      array('article', $v['_dida_values']->nid, $form['#form_token']));
+    }
+    
+    dd_set_message('操作成功');
+    
+    if (empty($form['settings']['#redirect'])) {
+      $form['settings']['#redirect'] = url('admin/article/list/' . $v['_dida_values']->cid);
+    }
+  } else {
+    dd_set_message('抱歉，数据库出现异常，无法保存', 'error');
+  }
+}
+
+/**
+ * 验证一条内容
+ * @param object $article
+ * 	待验证的内容
+ * @param array $form
+ *  若通过表单提交，表单字段
+ * @access public
+ * @return false|array 通过则返回 false，未通过返回一个错误信息数组
+ */
+function article_validate($article, &$form = NULL) {
+  $e = NULL;
+  
+  if (!empty($article->summary) && mb_strlen($article->summary) > 500) {
+    $e['summary']['#error'][] = '摘要不超过 500 字';
+  } else if (!empty($article->username) && mb_strlen($article->username) > 16) {
+    $e['username']['#error'][] = '指定的昵称不超过 16 字';
+  } else if (!empty($article->visit) && preg_match('/[^0-9]$/', $article->visit)) {
+    $e['visit']['#error'][] = '访问量只能是大于 0 的整数';
+  } else if (mb_strlen($article->title) > 255) {
+    $e['title']['#error'][] = '标题过长';
+  } else if (!$e = field_get_node_validate('article', 'default', $article)) {
+    if (!$e = module_invoke_all('article_validate', $article, $form)) {
+      $e = field_get_node_validate('article', 'ext_article_' . $article->cat->type, $article);
+    }
+  } else {
+    return false;
+  }
+
+
+  return $e;
+}
+
+/**
+ * 保存一条内容
+ * @param (object) $article
+ * 	内容记录，若有 nid，则更新记录
+ * @param (bool) $validate
+ * 	是否验证内容
+ * @return (false|true) &$error 为验证错误信息
+ */
+function article_save($article, $validate = true, &$error = NULL) {
+  if ($validate && $error = article_validate($article)) {
+    return false;
+  }
+  
+  if (!empty($article->nid)) {
+    $args = array('nid');
+    $article->updated = $_SERVER['REQUEST_TIME'];
+    $article->is_insert = false;
+  } else {
+    if (empty($article->created)) {
+      $article->created = $_SERVER['REQUEST_TIME'];
+    }
+    if (empty($article->uid)) {
+      $article->uid = $GLOBALS['user']->uid;
+    }
+    $args = NULL;
+    $article->is_insert = true;
+  }
+ 
+  if (empty($article->cid)) {
+    if (!empty($article->type)) {
+      $article->cat = article_get_cat_type($article->type);
+    }
+  } else {
+    $article->cat = article_get_cat_cid($article->cid);
+  }
+
+  if (!empty($article->get_images)) {
+    $rand = md5(uniqid(mt_rand(), true));
+    $article->body = file_down_image($article->body, array(
+      'savepath' => 'article/' . date('Y') . '/' . date('m') . '/' . date('d'),
+      'ext_type' => $rand,
+      'status' => -1,
+      'size' => '800x600',
+      'watermark' => true
+    ));
+  }
+  
+  if (!empty($article->filter_links)) {
+    $article->body = preg_replace_callback('/(<a.*?href=)["|\'](.*?)["|\']/i', '_article_filter_links', $article->body);
+  }
+  
+  // 过滤危险标签script style 等 
+  $article->body = system_filter_deny_tags($article->body);
+  
+  if (empty($article->summary)) {
+    $article->summary = mb_substr(str_replace(array('&nbsp;', "\n", "\r", "\t", "\v"), '', strip_tags($article->body)), 0, 100) . '…';
+  }
+  
+  if (db_write_record('article', $article, $args)) {
+    if (!empty($article->get_images)) {
+      db_exec('UPDATE {files} SET ext_type = ?, ext_id = ?, status = 1 WHERE ext_type = ?', 
+      array('article', $article->nid, $rand));
+    }
+    // 通用扩展属性
+    field_get_node_save('article', 'default', $article);
+
+    // 更新分类文章数量
+    db_exec('UPDATE {article_cat} SET article_count = (SELECT COUNT(nid) FROM {article} 
+    WHERE cid = ? AND status > 0) WHERE cid = ?', array($article->cid, $article->cid));
+
+    // 更新分类缓存 
+    article_system_cache_clear('submit', array('value' => array('article_cat' => true)));
+
+    // 分类扩展属性
+    field_get_node_save('article', 'ext_article_' . $article->cat->type, $article);
+
+    module_invoke_all('article_save', $article);
+    return true;
+  }
+}
+
+/**
+ * 过滤外部链接
+ * @param (array) $mat
+ * @return (string)
+ */
+function _article_filter_links($mat) {
+  if (strpos($mat[2], $GLOBALS['base_url']) === false && strpos($mat[2], 'http://') !== false) {
+    return $mat[1] . '"#"';
+  } else {
+    return $mat[0];
+  }
+}
+
+/**
+ * @Implement of hook_theme()
+ */
+function article_theme() {
+  return array(
+    'article_view' => array(
+      'tpl' => 'article_view.tpl.php',
+      'description' => '内容浏览模板',
+      'args' => array('article'),
+    ),
+    'article_cat' => array(
+      'tpl' => 'article_cat.tpl.php',
+      'description' => '内容分类模板',
+      'args' => array('cat'),
+    ),
+  );
+}
+
+/**
+ * @Implement of hook_template_preprocess_x()
+ * 
+ * 文章可按类型创建模板文件：
+ * article_view_{$article->type}.tpl.php
+ * article_view.tpl.php
+ * 
+ */
+function article_template_preprocess_article_view(&$var, $hook) {
+  if (isset($var['article']) && $var['article']->cat->type) {
+    $var['theme_config']->tpl[] = 'article_view_' . $var['article']->cat->type . '.tpl.php';
+  } 
+}
+
+/**
+ * @Implement of hook_template_preprocess_x()
+ * 
+ * 分类可按类型创建模板文件：
+ * article_cat_{$article->type}.tpl.php
+ * article_cat.tpl.php
+ * 
+ */
+function article_template_preprocess_article_cat(&$var, $hook) {
+  if (isset($var['cat']->info) && $var['cat']->info->type) {
+    $var['theme_config']->tpl[] = 'article_cat_' . $var['cat']->info->type . '.tpl.php';
+  } 
+}
+
+
+/**
+ * 内容点击排行，缓存周期一小时
+ * @param (int) $tid
+ * 	若指定，则获取该分类
+ * @return (array)
+ */
+function article_get_visit_list($tid = 0) {
+  static $datas;
+  
+  if (!isset($datas[$tid])) {
+    if ($cache = cache_get('article_get_visit_list_' . $tid)) {
+      return $cache->data;
+    } else {
+      $query = 'SELECT n.nid, n.title, n.visit, n.created, n.updated FROM {article} n ';
+      
+      if (!empty($tid)) {
+        $query .= ' INNER JOIN {fields_term_node} t ON n.nid = t.nid WHERE n.status > 0 AND t.tid = ?';
+        $args = array($tid);
+      } else {
+        $query .= 'WHERE n.status > 0';
+        $args = NULL;
+      }
+      
+      $query .= ' ORDER BY n.visit DESC';
+      
+      if ($fetch = db_query($query, $args, array('limit' => 13))) {
+        cache_set('article_get_visit_list_' . $tid, $fetch, 'cache', 3600);
+        $datas[$tid] = $fetch;
+      }
+    }
+  }
+  
+  return $datas[$tid];
+}
+
+/**
+ * 获取所有或指定分类，分类状态等于 0 的除外
+ * @param int $cid 
+ *  指定分类 cid
+ * @access public
+ * @return array|object
+ */
+function article_get_cat_cid($cid = NULL) {
+
+  if ($cache = cache_get('article_get_cat_cid')) {
+    $cat = $cache->data;
+  } else  {
+    $cat = array();
+    if ($fetch = db_query('SELECT * FROM {article_cat} 
+    WHERE status > 0 ORDER BY weight ASC')) {
+      foreach ($fetch as $o) {
+        $cat[$o->cid] = $o;
+      }
+    }
+    cache_set('article_get_cat_cid', $cat);
+  }
+
+  return empty($cid) ? $cat : $cat[$cid];
+}
+
+/**
+ * 获取所有或指定分类，分类状态等于 0 的除外
+ * @param string $type
+ *  指定分类 type
+ * @access public
+ * @return array|object
+ */
+function article_get_cat_type($type = NULL) {
+
+  if ($cache = cache_get('article_get_cat_type')) {
+    $cat = $cache->data;
+  } else  {
+    $cat = array();
+    if ($fetch = db_query('SELECT * FROM {article_cat} 
+    WHERE status > 0 ORDER BY weight ASC')) {
+      foreach ($fetch as $o) {
+        $cat[$o->type] = $o;
+      }
+    }
+    cache_set('article_get_cat_type', $cat);
+  }
+
+  return empty($type) ? $cat : $cat[$type];
+}
+
+/**
+ * @Implement of hook_system_cache_clear()
+ */
+function article_system_cache_clear($op = 'list', $v = NULL) {
+  switch ($op) {
+    case 'list':
+    return array(
+      'article_cat' => '清除内容分类缓存，当分类信息滞后时，可使用此功能',
+    );
+    case 'submit':
+      if (!empty($v['value']['article_cat'])) {
+        cache_del('cid', 'article_get_cat_type');
+        cache_del('cid', 'article_get_cat_cid');
+      }
+  }
+}
+
+/**
+ * @Implement of hook_field_call_group()
+ * 
+ * 定义字段组
+ */
+function article_field_call_group($type = NULL) {
+  
+  $groups = array(
+    'default' => array(
+      'title' => '内容属性',
+      'description' => '内容分类通用属性',
+    ),
+  );
+  
+  // 内容分类扩展属性
+  if ($fetch = article_get_cat_type()) {
+    foreach ($fetch as $o) {
+      $groups['ext_article_' . $o->type] = array(
+        'title' => $o->name . '分类属性',
+        'fieldset' => true,
+      );
+    }
+  }
+  
+  return $type ? $groups[$type] : $groups;
+}
+
+/**
+ * 获取指定文章的上一篇和下一篇，以文章录入时间为序
+ * @param int $nid 
+ *  文章 id
+ * @param int $cid 
+ *  文章分类 id，若指定，则将上、下篇限制在相同分类内
+ * @access public
+ * @return array
+ */
+function article_get_prev_and_next($nid, $cid = NULL) {
+  $node = array();
+  
+  if ($cid && is_numeric($cid)) {
+    $suffix = ' AND cid = ' . $cid;
+  } else {
+    $suffix = '';
+  }
+
+  // nid 大于 1 才可能有上一篇
+  if ($nid > 1) {  
+    $node['prev'] = db_query('SELECT nid, title FROM {article} WHERE nid < ?' . $suffix,
+    array($nid), array('limit' => 1, 'return' => 'one'));
+  }
+  
+  $node['next'] = db_query('SELECT nid, title FROM {article} WHERE nid > ?' . $suffix,
+  array($nid), array('limit' => 1, 'return' => 'one'));
+
+  return $node;
+}

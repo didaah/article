@@ -1,0 +1,59 @@
+/*$Id$*/
+
+/*term*/
+.article-list-summary {
+  overflow: hidden;
+  clear: both;
+  margin: 5px 0;
+  padding: 5px 0;
+  border-bottom: 1px solid #ccc;
+}
+
+.article-list-summary-image {
+  float: left;
+  margin-right: 5px;
+}
+
+.article-list-summary-body {
+  padding: 10px 0;
+}
+
+.article-list-summary-links {
+  text-align: right;
+  color: #444;
+  margin: 10px 0 0 0;
+}
+
+.article-list-summary-links span {
+  padding: 0 5px;
+}
+
+/*view*/
+.article-view-links {
+  padding: 8px 0;
+  margin: 5px 0;
+  text-align: right;
+  color: #444;
+  border-bottom: 1px solid #ddd;
+}
+
+.article-view-links span {
+  padding: 0 5px;
+}
+
+.article-view-prev-and-next {
+  overflow: hidden;
+  padding: 8px 0;
+  margin: 15px 0 5px 0;
+  border-bottom: 1px dotted #000;
+}
+
+.article-view-prev-and-next .left {
+  float: left;
+  width: 46%;
+}
+
+.article-view-prev-and-next .right {
+  float: right;
+  width: 46%;
+}

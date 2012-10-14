@@ -1,0 +1,7 @@
+<?php
+// $Id$
+$info = array(
+  'name' => '文章',
+  'ver' => '1.0',
+  'language' => 'zh-hans',
+);

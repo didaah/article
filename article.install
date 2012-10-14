@@ -1,0 +1,218 @@
+<?php
+// $Id$
+
+/**
+ * @Implement of hook_schema()
+ */
+function article_schema() {
+  $schema['article_cat'] = array(
+    'description' => '文章分类',
+    'fields' => array(
+      'cid' => array(
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'name' => array(
+        'type' => 'varchar',
+        'length' => 30,
+        'not null' => TRUE,
+        'default' => '',
+        'description' => '分类名称',
+      ),
+      'type' => array(
+        'type' => 'varchar',
+        'length' => 12,
+        'not null' => TRUE,
+        'default' => '',
+        'description' => '分类索引',
+      ),
+      'pid' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'unsigned' => TRUE,
+        'default' => 0,
+        'description' => '父 id',
+      ),
+      'article_count' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'unsigned' => TRUE,
+        'default' => 0,
+        'description' => '该分类下产品数量',
+      ),
+      'weight' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'unsigned' => TRUE,
+        'default' => 0,
+        'description' => '权重',
+      ),
+      'status' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'size' => 'tiny',
+        'default' => 0,
+        'description' => '分类状态',
+      ),
+    ),
+    'unique keys' => array(
+      'name_pid' => array('name', 'pid'),
+      'type' => array('type')
+    ),
+    'indexes' => array(
+      'sw' => array('status', 'weight'),
+    ),
+    'primary key' => array('cid'),
+  );
+
+  $schema['article'] = array(
+    'description' => '文章',
+    'fields' => array(
+      'nid' => array(
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'title' => array(
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+        'description' => '标题',
+      ),
+      'username' => array(
+        'type' => 'varchar',
+        'length' => 16,
+        'not null' => TRUE,
+        'default' => '',
+        'description' => '指定一个昵称，用于页面显示',
+      ),
+      'summary' => array(
+        'type' => 'text',
+        'not null' => FALSE,
+        'size' => 'normal',
+        'description' => '摘要'
+      ),
+      'body' => array(
+        'type' => 'text',
+        'not null' => FALSE,
+        'description' => '内容'
+      ),
+      'cid' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'unsigned' => TRUE,
+        'default' => 0,
+        'description' => '类别 id',
+      ),
+      'uid' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'unsigned' => TRUE,
+        'default' => 0,
+        'description' => '创建用户 id',
+      ),
+      'weight' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => '权重',
+      ),
+      'status' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'size' => 'tiny',
+        'default' => 0,
+        'description' => '文章状态',
+      ),
+      'comment_count' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'unsigned' => TRUE,
+        'default' => 0,
+        'description' => '浏览次数',
+      ),
+      'visit' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'unsigned' => TRUE,
+        'default' => 0,
+        'description' => '浏览次数',
+      ),
+      'created' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'unsigned' => TRUE,
+        'default' => 0,
+        'description' => '创建时间',
+      ),
+      'data' => array(
+        'type' => 'text',
+        'size' => 'medium',
+        'not null' => FALSE,
+        'serialize' => 1,
+        'description' => '序列化存储其它数据',
+      ),
+      'updated' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'unsigned' => TRUE,
+        'default' => 0,
+        'description' => '更新时间',
+      ),
+    ),
+    'indexes' => array(
+      'csc' => array('cid', 'status', 'created'),
+      'cswc' => array('cid', 'status', 'weight', 'created'),
+      'csvc' => array('cid', 'status', 'visit', 'created'),
+      'cscc' => array('cid', 'status', 'comment_count', 'created'),
+    ),
+    'foreign keys' => array(
+      'cid' => array(
+        'table' => 'article_cat',
+        'field' => 'cid',
+        'update' => 'cascade',
+        'delete' => 'action'
+      ),
+    ),
+    'primary key' => array('nid'),
+  );
+  
+  return $schema;
+}
+
+/**
+ * @Implement of hook_install()
+ */
+function article_install() {
+  $ret = array();
+  $ret = module_install_schema('install', 'article');
+  return $ret;
+}
+
+/**
+ * @Implement of hook_uninstall()
+ */
+function article_uninstall() {
+  $ret = array();
+  $ret = module_install_schema('uninstall', 'article');
+ 
+  // 删除分类通用属性
+  field_group_delete('article', 'default');
+
+  // 删除分类扩展属性
+  if ($fetch = article_get_cat_type()) {
+    foreach ($fetch as $o) {
+      field_group_delete('article', 'ext_article_' . $o->type);
+    }
+  }
+  
+  field_get_cache_field(NULL, 1);
+  field_set_cache_term();
+
+  db_exec('DELETE FROM {variable} WHERE name LIKE ?', array('article_%'));
+  var_init();
+  
+  return $ret;
+}
