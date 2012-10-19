@@ -19,7 +19,7 @@
   </div>
 
   <?php if (!empty($article->field_html)) : ?>
-  <div class="article-vew-meta"><?php echo $article->field_html; ?></div>
+  <div class="article-view-meta"><?php echo $article->field_html; ?></div>
   <?php endif; ?>
 
   <div class="article-view-body"><?php echo $article->body?></div>
