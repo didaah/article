@@ -336,6 +336,7 @@ function article_form($article) {
   dd_get_editor('body', array(
     'toolbar' => 'full',
     'filebrowserImageUploadUrl' => $file_url,
+    'swfupload' => 1,
     'height' => 300,
   ));
   
