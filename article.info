@@ -1,7 +1,8 @@
 <?php
 // $Id$
 $info = array(
-  'name' => '文章',
+  'name' => '文章管理',
+  'description' => '提供完善的文章管理功能',
   'ver' => '1.0',
   'language' => 'zh-hans',
 );

@@ -8,21 +8,21 @@ function article_menu() {
   $items = array();
   
   $items['admin/article/list'] = array(
-    'title' => '内容管理',
+    'title' => '文章管理',
     'access_arguments' => array('article admin view'),
     'page_callback' => 'article_admin_lists',
     'file' => 'article.admin.inc',
   );
   
   $items['admin/article/add'] = array(
-    'title' => '添加内容',
+    'title' => '添加文章',
     'access_arguments' => array('article admin create'),
     'page_callback' => 'article_admin_form',
     'file' => 'article.admin.inc',
   );
   
   $items['admin/article/edit/%'] = array(
-    'description' => '编辑内容',
+    'description' => '编辑文章',
     'load_functions' => array(3 => array('article_load')),
     'access_arguments' => array('article admin update'),
     'page_callback' => 'article_admin_form',
@@ -31,7 +31,7 @@ function article_menu() {
   );
   
   $items['article/%'] = array(
-    'description' => '内容浏览',
+    'description' => '文章浏览',
     'load_functions' => array(1 => array('article_load')),
     'access_arguments' => array('article article view'),
     'page_callback' => 'article_page_view',
@@ -64,13 +64,13 @@ function article_menu() {
  */
 function article_perm() {
   return array(
-    'article article view' => '内容浏览',
-    'article admin view' => '内容管理',
-    'article admin category' => '内容类别管理',
+    'article article view' => '文章浏览',
+    'article admin view' => '文章管理',
+    'article admin category' => '文章类别管理',
     'article admin fields' => '类别属性管理',
-    'article admin create' => '添加内容',
-    'article admin update' => '编辑内容',
-    'article admin delete' => '删除内容',
+    'article admin create' => '添加文章',
+    'article admin update' => '编辑文章',
+    'article admin delete' => '删除文章',
   );
 }
 
@@ -79,7 +79,7 @@ function article_perm() {
  * 注册管理菜单
  */
 function article_system_admin_menus() {
-  $menu = array(array(), '内容');
+  $menu = array(array(), '文章');
 
   if ($cat = article_get_cat_cid()) {
     foreach ($cat as $o) {
@@ -87,7 +87,7 @@ function article_system_admin_menus() {
     }
   }
 
-  $menu[0][] = array('内容分类管理', 'admin/article/category');
+  $menu[0][] = array('文章分类管理', 'admin/article/category');
 
   return $menu;
 }
@@ -191,7 +191,7 @@ function article_category_load($cid) {
 }
 
 /**
- * 根据 nid 加载一个内容对象
+ * 根据 nid 加载一个文章对象
  * @param (int) $nid
  * @return (object) $article
  */
@@ -209,7 +209,7 @@ function article_load($nid) {
         $article[$nid]->data = array();
       }
 
-      // 内容分类信息
+      // 文章分类信息
       $article[$nid]->cat = article_get_cat_cid($article[$nid]->cid);
 
       // 通用扩展属性
@@ -227,19 +227,19 @@ function article_load($nid) {
 }
 
 /**
- * 删除一条内容
+ * 删除一条文章
  * @param int $nid
- * 	内容 id
+ * 	文章 id
  * @return (bool)
  */
 function article_delete($nid) {
   if ($article = article_load($nid)) {
     if (db_exec('DELETE FROM {article} WHERE nid = ?', array($nid))) {
-      // 删除内容下关联的文件
+      // 删除文章下关联的文件
       db_exec('DELETE FROM {files} WHERE ext_type = ? AND ext_id = ?', 
       array('article', $article->nid));
       
-      // 删除内容扩展字段
+      // 删除文章扩展字段
       field_get_node_load('article', 'default', $article);
 
       // 分类扩展属性
@@ -256,17 +256,17 @@ function article_delete($nid) {
 }
 
 /**
- * 内容表单
+ * 文章表单
  * @param (object) $article
  */
 function article_form($article) {
   if (!is_object($article) || empty($article->cid)) {
-    dd_set_message('请传递 $article 对象，若新增内容，请给 $article->cid 赋值');
+    dd_set_message('请传递 $article 对象，若新增文章，请给 $article->cid 赋值');
     return false;
   }
 
   if (!$cat = article_get_cat_cid($article->cid)) {
-    dd_set_message('不正确的内容类别，请重新进入', 'error');
+    dd_set_message('不正确的文章类别，请重新进入', 'error');
     return false;
   }
 
@@ -308,7 +308,7 @@ function article_form($article) {
     '#type' => 'textarea',
     '#default_value' => $article->summary,
     '#fieldset_prefix' => 'desc',
-    '#fieldset_legend' => '内容摘要',
+    '#fieldset_legend' => '文章摘要',
     '#fieldset_suffix' => 1,
     '#fieldset' => true,
     '#description' => '不超过 500 字，留空将自动生成',
@@ -316,29 +316,12 @@ function article_form($article) {
   );
   
   $form['fields']['body'] = array(
-    '#title' => '内容',
+    '#title' => '文章',
     '#type' => 'textarea',
     '#default_value' => $article->body,
     '#required' => 1,
     '#attributes' => array('rows' => 8, 'cols' => 60, 'id' => 'body')
   );
-  
-  global $form_tokens;
-  
-  $file_url = url('files/editor', array('query' => 'op=ckeditor&name=upload&type=image&image_size=800x600'));
-  if (!empty($article->nid)) {
-    $file_url .= '&ext_type=article&ext_id=' . $article->nid;
-  } else {
-    // 内容提交保存时，以 $form_token 做为关联条件
-    $file_url .= '&status=-1&ext_type=' . $form_tokens['article_form'];
-  }
-  
-  dd_get_editor('body', array(
-    'toolbar' => 'full',
-    'filebrowserImageUploadUrl' => $file_url,
-    'swfupload' => 1,
-    'height' => 300,
-  ));
   
   $form['fields']['username'] = array(
     '#type' => 'textfield',
@@ -353,7 +336,7 @@ function article_form($article) {
     '#title' => '访问',
     '#default_value' => isset($article->visit) ? $article->visit : 0,
     '#required' => 1,
-    '#description' => '内容的访问量，只能是正整数'
+    '#description' => '文章的访问量，只能是正整数'
   );
   
   $form['fields']['status'] = array(
@@ -408,7 +391,7 @@ function article_form_submit(&$form, &$v) {
   if (article_save($v['_dida_values'], 0)) {
     
     if (empty($v['_dida_values']->_db_write_record_is_update)) {
-      // 将文件关联到内容
+      // 将文件关联到文章
       db_exec('UPDATE {files} SET ext_type = ?, ext_id = ?, status = 1 WHERE ext_type = ?', 
       array('article', $v['_dida_values']->nid, $form['#form_token']));
     }
@@ -424,9 +407,9 @@ function article_form_submit(&$form, &$v) {
 }
 
 /**
- * 验证一条内容
+ * 验证一条文章
  * @param object $article
- * 	待验证的内容
+ * 	待验证的文章
  * @param array $form
  *  若通过表单提交，表单字段
  * @access public
@@ -456,11 +439,11 @@ function article_validate($article, &$form = NULL) {
 }
 
 /**
- * 保存一条内容
+ * 保存一条文章
  * @param (object) $article
- * 	内容记录，若有 nid，则更新记录
+ * 	文章记录，若有 nid，则更新记录
  * @param (bool) $validate
- * 	是否验证内容
+ * 	是否验证文章
  * @return (false|true) &$error 为验证错误信息
  */
 function article_save($article, $validate = true, &$error = NULL) {
@@ -556,12 +539,12 @@ function article_theme() {
   return array(
     'article_view' => array(
       'tpl' => 'article_view.tpl.php',
-      'description' => '内容浏览模板',
+      'description' => '文章浏览模板',
       'args' => array('article'),
     ),
     'article_cat' => array(
       'tpl' => 'article_cat.tpl.php',
-      'description' => '内容分类模板',
+      'description' => '文章分类模板',
       'args' => array('cat'),
     ),
   );
@@ -597,7 +580,7 @@ function article_template_preprocess_article_cat(&$var, $hook) {
 
 
 /**
- * 内容点击排行，缓存周期一小时
+ * 文章点击排行，缓存周期一小时
  * @param (int) $tid
  * 	若指定，则获取该分类
  * @return (array)
@@ -688,7 +671,7 @@ function article_system_cache_clear($op = 'list', $v = NULL) {
   switch ($op) {
     case 'list':
     return array(
-      'article_cat' => '清除内容分类缓存，当分类信息滞后时，可使用此功能',
+      'article_cat' => '清除文章分类缓存，当分类信息滞后时，可使用此功能',
     );
     case 'submit':
       if (!empty($v['value']['article_cat'])) {
@@ -707,12 +690,12 @@ function article_field_call_group($type = NULL) {
   
   $groups = array(
     'default' => array(
-      'title' => '内容属性',
-      'description' => '内容分类通用属性',
+      'title' => '文章属性',
+      'description' => '文章分类通用属性',
     ),
   );
   
-  // 内容分类扩展属性
+  // 文章分类扩展属性
   if ($fetch = article_get_cat_type()) {
     foreach ($fetch as $o) {
       $groups['ext_article_' . $o->type] = array(
@@ -773,9 +756,9 @@ function article_comment_info() {
     'field_title' => true, // 启用标题，默认为 true
     'field_title_required' => false, // 必须输入标题，默认为 false
     'field_title_max' => 255, // 标题最大长度，不超过 255
-    'field_body_required' => true, // 必须输入评论内容，默认为 true
-    'field_body_max' => 50000, // 内容最大长度
-    'field_body_min' => 2, // 内容最小长度
+    'field_body_required' => true, // 必须输入评论文章，默认为 true
+    'field_body_max' => 50000, // 文章最大长度
+    'field_body_min' => 2, // 文章最小长度
     'field_captcha_all' => false, // 针对所有人启用验证码，默认为 false
     'field_captcha_anonymous' => true, // 针对匿名用户启用验证码，默认为 true
     'number_desc' => true, // 评论倒序。从新到旧
@@ -792,5 +775,4 @@ function article_comment_info() {
   );
   return $types;
 }
-
 
